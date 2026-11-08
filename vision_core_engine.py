@@ -107,6 +107,3 @@ try:
 except Exception as e:
     st.error(f"Smart Warning: An unexpected anomaly was caught by the error handler: {e}")
     st.info("The application remains online. Please re-check your input file format or camera connection.")
-```[cite: 23]
-
-> *"An advanced full-stack AI computer vision and face emotion tracking web application built from scratch using Python and Streamlit. Features real-time visual matrix processing, smart expression classification, zero-crash error handling, and a futuristic cyber-glow UI."*[cite: 23]
