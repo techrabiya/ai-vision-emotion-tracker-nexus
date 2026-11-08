@@ -1,109 +1,150 @@
 import streamlit as st
 import cv2
 import numpy as np
-from PIL import Image
+from deepface import DeepFace
 
+# पेज का लेआउट सेट करें
 st.set_page_config(
-    page_title="VisionSphere AI - Emotion & Object Tracker",
+    page_title="AI Vision & Emotion Tracker",
     page_icon="🤖",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
-st.markdown("""
-    <style>
-    .main {
-        background-color: #0b0f19;
-        color: #00ffcc;
-    }
-    .stSidebar {
-        background-color: #111827;
-    }
-    h1, h2, h3 {
-        color: #00ffcc;
-        font-family: 'Courier New', monospace;
-    }
-    .metric-card {
-        background: rgba(17, 24, 39, 0.7);
-        border: 1px solid #00ffcc;
-        padding: 15px;
-        border-radius: 10px;
-        box-shadow: 0 0 15px rgba(0, 255, 204, 0.2);
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-st.title("🛡️ VisionSphere: AI Computer Vision & Smart Face Emotion Tracker")
+# स्टाइलिश हेडर
+st.title("🤖 AI Computer Vision & Smart Face Emotion Tracker")
 st.markdown("---")
 
-st.sidebar.header("🎛️ Control Matrix")
-input_mode = st.sidebar.radio("Select Input Mode", ["Webcam Live Feed", "Upload Image"])
-detection_mode = st.sidebar.selectbox("Analysis Engine", ["Facial Emotion Detection", "Object Tracking Matrix"])
-confidence_threshold = st.sidebar.slider("Detection Sensitivity", 0.1, 1.0, 0.5)
+# साइडबार - मोड और सेटिंग्स
+st.sidebar.header("⚙️ Control Panel")
+app_mode = st.sidebar.selectbox(
+    "Choose Mode / इनपुट मोड चुनें",
+    ["Live Webcam Stream", "Upload Image/Video"]
+)
 
-try:
-    if input_mode == "Upload Image":
-        uploaded_file = st.sidebar.file_uploader("Upload Image File (JPG/PNG)", type=["jpg", "jpeg", "png"])
+# ज़ीरो-कैश एरर हैंडलिंग के साथ इमोशन डिटेक्शन फंक्शन
+def analyze_frame(frame):
+    try:
+        # DeepFace का उपयोग करके चेहरे के भाव और ऑब्जेक्ट/डिटेक्शन एनालिसिस
+        analysis = DeepFace.analyze(
+            frame, 
+            actions=['emotion'], 
+            enforce_detection=False
+        )
         
-        if uploaded_file is not None:
-            image = Image.open(uploaded_file)
-            img_array = np.array(image)
+        if isinstance(analysis, list):
+            analysis = analysis[0]
             
-            if len(img_array.shape) == 3 and img_array.shape[2] == 3:
-                frame = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
-            else:
-                frame = cv2.cvtColor(img_array, cv2.COLOR_GRAY2BGR)
+        emotion = analysis.get('dominant_emotion', 'Neutral')
+        region = analysis.get('region', {})
+        
+        return emotion, region
+    except Exception as e:
+        # स्मार्ट वार्निंग अगर कोई दिक्कत आए तो ऐप क्रैश नहीं होगा
+        st.sidebar.warning(f"Smart Warning: Face processing adjustment active ({str(e)})")
+        return "Neutral", {}
+
+if app_mode == "Live Webcam Stream":
+    st.subheader("🔴 Live Webcam Emotion Tracking")
+    st.write("मैबुक या डिवाइस के कैमरे से रियल-टाइम इमोशन ट्रैकिंग चालू करने के लिए नीचे दिए गए बटन पर क्लिक करें।")
+    
+    run_webcam = st.checkbox("Start Live Camera / कैमरा शुरू करें")
+    
+    # मेट्रिक्स डैशबोर्ड लेआउट
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        metric_emotion = st.metric(label="Detected Emotion / भाव", value="Waiting...")
+    with col2:
+        metric_status = st.metric(label="Tracker Status / स्थिति", value="Standby")
+    with col3:
+        metric_fps = st.metric(label="System Mode", value="Zero-Crash Active")
+
+    frame_placeholder = st.empty()
+    
+    # कैमरा फीड लूप
+    if run_webcam:
+        cap = cv2.VideoCapture(0)
+        metric_status.metric(label="Tracker Status / स्थिति", value="Active / चल रहा है")
+        
+        while run_webcam:
+            ret, frame = cap.read()
+            if not ret:
+                st.error("स्मार्ट वार्निंग: कैमरा फ़ीड प्राप्त करने में असमर्थ। कृपया कैमरा कनेक्शन जांचें।")
+                break
                 
-            st.success("Image successfully processed into the vision matrix!")
-        else:
-            st.info("Please upload an image file using the sidebar to begin analysis.")
-            frame = None
-
-    else:
-        st.info("Webcam mode active. Click 'Start Live Stream' below.")
-        run_camera = st.checkbox("Start Live Stream")
-        
-        if run_camera:
-            cap = cv2.VideoCapture(0)
-            if not cap.isOpened():
-                st.error("Smart Warning: Unable to access the camera device. Please check your hardware permissions.")
-                frame = None
-            else:
-                ret, frame = cap.read()
-                cap.release()
-                if not ret:
-                    st.warning("Smart Warning: Failed to capture frame from video stream.")
-                    frame = None
-        else:
-            frame = None
-
-    if frame is not None:
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            st.subheader("Live Feed Visual Matrix")
-            height, width, _ = frame.shape
+            # फ्रेम को प्रोसेस करें
+            dominant_emotion, region = analyze_frame(frame)
             
-            cv2.rectangle(frame, (50, 50), (width - 50, height - 50), (0, 255, 204), 2)
-            cv2.putText(frame, "Target Locked: Neutral / Focused", (60, 40), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 204), 2)
+            # विजुअल मैट्रिक्स: चेहरे के चारों ओर बॉक्स और टेक्स्ट जोड़ना
+            if region and all(k in region for k in ('x', 'y', 'w', 'h')):
+                x, y, w, h = region['x'], region['y'], region['w'], region['h']
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                cv2.putText(
+                    frame, 
+                    f"Emotion: {dominant_emotion}", 
+                    (x, max(y - 10, 10)), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 
+                    0.9, 
+                    (0, 255, 0), 
+                    2
+                )
             
+            # ओपेनCV BGR को Streamlit RGB में बदलना
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            st.image(frame_rgb, channels="RGB", use_column_width=True)
+            frame_placeholder.image(frame_rgb, channels="RGB", use_container_width=True)
+            
+            # लाइव मेट्रिक्स अपडेट करें
+            metric_emotion.metric(label="Detected Emotion / भाव", value=dominant_emotion.capitalize())
+            
+        cap.release()
+    else:
+        st.info("कैमरा बंद है। शुरू करने के लिए ऊपर दिए गए चेकबॉक्स पर टिक करें।")
 
-        with col2:
-            st.subheader("Real-Time Emotion Counter")
-            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+elif app_mode == "Upload Image/Video":
+    st.subheader("📁 Image / File Upload Vision Matrix")
+    uploaded_file = st.file_uploader(
+        "अपनी इमेज या मीडिया फाइल यहाँ अपलोड करें (Supports: JPG, PNG, JPEG)", 
+        type=['jpg', 'jpeg', 'png']
+    )
+    
+    if uploaded_file is not None:
+        try:
+            # इमेज को रीड करना
+            file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+            opencv_image = cv2.imdecode(file_bytes, 1)
             
-            st.metric(label="😊 Happy State", value="12%")
-            st.metric(label="😢 Sad State", value="3%")
-            st.metric(label="😐 Neutral / Focused", value="85%")
-            st.metric(label="🎯 Objects Detected", value="2 Items")
+            if opencv_image is None:
+                raise ValueError("अमान्य फाइल फॉर्मेट या करप्ट इमेज डाटा।")
+                
+            # एनालिसिस कॉल
+            dominant_emotion, region = analyze_frame(opencv_image)
             
-            st.markdown('</div>', unsafe_allow_html=True)
+            # विजुअल बॉक्स ड्रा करना
+            if region and all(k in region for k in ('x', 'y', 'w', 'h')):
+                x, y, w, h = region['x'], region['y'], region['w'], region['h']
+                cv2.rectangle(opencv_image, (x, y), (x + w, y + h), (255, 0, 0), 2)
+                cv2.putText(
+                    opencv_image, 
+                    f"Emotion: {dominant_emotion}", 
+                    (x, max(y - 10, 10)), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 
+                    0.9, 
+                    (255, 0, 0), 
+                    2
+                )
+                
+            # इमेज डिस्प्ले करें
+            st.image(cv2.cvtColor(opencv_image, cv2.COLOR_BGR2RGB), channels="RGB", use_container_width=True)
             
-            st.info("System Status: Zero-Crash Protection Active. All data streams operating within normal parameters.")
+            # रिजल्ट मेट्रिक्स
+            st.success(f"सफलतापूर्वक डिटेक्ट किया गया! मुख्य भाव (Dominant Emotion): **{dominant_emotion.capitalize()}**")
+            
+        except Exception as e:
+            # ज़ीरो-कैश एरर हैंडलिंग
+            st.warning(f"⚠️ स्मार्ट वार्निंग: फाइल प्रोसेस करते समय समस्या आई ({str(e)})। कृपया दूसरी फाइल आज़माएं।")
+    else:
+        st.info("कृपया आगे बढ़ने के लिए कोई इमेज अपलोड करें।")
 
-except Exception as e:
-    st.error(f"Smart Warning: An unexpected anomaly was caught by the error handler: {e}")
-    st.info("The application remains online. Please re-check your input file format or camera connection.")
+# फुटर नोट
+st.markdown("---")
+st.markdown("✨ *AI Computer Vision & Smart Face Emotion Tracker - Built with Python, OpenCV & Streamlit.*")
+```[cite: 29]
